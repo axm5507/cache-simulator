@@ -4,7 +4,7 @@ This project is a CPU cache simulator written in C++17.
 
 ## Overview
 
-This simulator models how a CPU cache behaves when replaying memory access traces. It will supports configurable cache geometry, replacement policies, and write policies.
+This simulator models how a CPU cache behaves when replaying memory access traces. It will support configurable cache geometry, replacement policies, and write policies.
 
 ## Project Structure
 
