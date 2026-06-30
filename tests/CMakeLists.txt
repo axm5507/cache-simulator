@@ -13,6 +13,7 @@ add_executable(cache_sim_tests
     test_cacheline.cpp
     test_cacheset.cpp
     test_cache_address.cpp
+    test_cache_sim.cpp
 )
 
 target_link_libraries(cache_sim_tests
