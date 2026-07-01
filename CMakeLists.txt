@@ -10,6 +10,7 @@ add_library(cache_sim_lib
     src/CacheLine.cpp
     src/CacheSet.cpp
     src/Cache.cpp
+    src/IReplacementPolicy.cpp
     src/TraceReader.cpp
 )
 
