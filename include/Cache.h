@@ -2,7 +2,8 @@
 
 #include "CacheSet.h"
 #include "Config.h"
-#include "IReplacementPolicy.h" 
+#include "IReplacementPolicy.h"
+#include <iosfwd>
 #include <memory>
 #include <vector>
 #include <cstdint>
@@ -50,6 +51,7 @@ public:
     const CacheStats& stats() const;
     void resetStats();
     void printStats() const;
+    void printStats(std::ostream& out) const;
 
     //structural accessors
     int numSets()       const;
@@ -64,7 +66,7 @@ public:
     const CacheSet& getSet(int index) const;
 
 private:
-    CacheConfig            m_cfg;
+    CacheConfig m_cfg;
     std::vector<CacheSet>  m_sets;
     std::unique_ptr<IReplacementPolicy> m_policy; //version 3 update: replacement policy is now a separate class
 

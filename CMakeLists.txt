@@ -13,6 +13,7 @@ add_library(cache_sim_lib
     src/IReplacementPolicy.cpp
     src/TraceReader.cpp
     src/ConfigParser.cpp
+
 )
 
 target_include_directories(cache_sim_lib PUBLIC include)
@@ -20,6 +21,9 @@ target_include_directories(cache_sim_lib PUBLIC include)
 
 add_executable(cache_sim src/main.cpp)
 target_link_libraries(cache_sim PRIVATE cache_sim_lib)
+
+# Benchmark trace generator — run: ./gen_traces [output-dir]
+add_executable(gen_traces tools/gen_traces.cpp)
 
 enable_testing()
 add_subdirectory(tests)

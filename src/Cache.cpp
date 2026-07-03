@@ -1,8 +1,50 @@
 #include "Cache.h"
 #include <cassert>
-#include <iostream>
+#include <cstdio>
 #include <iomanip>
+#include <iostream>
+#include <string>
 
+
+namespace {
+
+constexpr int kLabelWidth = 20;
+
+std::string fmtInt(uint64_t n) {
+    std::string s = std::to_string(n);
+    int i = static_cast<int>(s.size()) - 3;
+    while (i > 0) { s.insert(static_cast<size_t>(i), ","); i -= 3; }
+    return s;
+}
+
+std::string fmtPct(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.2f%%", v * 100.0);
+    return buf;
+}
+
+std::string fmtBytes(uint64_t bytes) {
+    char buf[32];
+    if      (bytes >= 1024ULL * 1024) std::snprintf(buf, sizeof(buf), "%g MiB", bytes / (1024.0 * 1024.0));
+    else if (bytes >= 1024)           std::snprintf(buf, sizeof(buf), "%g KiB", bytes / 1024.0);
+    else                              return std::to_string(bytes) + " B";
+    return buf;
+}
+
+std::string policyName(ReplacementPolicy p) {
+    switch (p) {
+        case ReplacementPolicy::LRU:    return "LRU";
+        case ReplacementPolicy::FIFO:   return "FIFO";
+        case ReplacementPolicy::Random: return "Random";
+    }
+    return "?";
+}
+
+void reportRow(std::ostream& out, const std::string& label, const std::string& value) {
+    out << std::left << std::setw(kLabelWidth) << (label + ":") << value << "\n";
+}
+
+} // namespace
 
 double CacheStats::hitRate() const {
     uint64_t total = hits + misses;
@@ -155,22 +197,45 @@ const CacheStats& Cache::stats() const { return m_stats; }
 
 void Cache::resetStats() { m_stats = CacheStats{}; }
 
-void Cache::printStats() const {
-    uint64_t total = m_stats.totalAccesses();
-    std::cout << "[" << m_cfg.name << "]\n"
-              << "  total accesses    : " << total              << "\n"
-              << "  reads             : " << m_stats.reads      << "\n"
-              << "  writes            : " << m_stats.writes     << "\n"
-              << "  hits              : " << m_stats.hits       << "\n"
-              << "  misses            : " << m_stats.misses     << "\n"
-              << "  hit rate          : " << std::fixed << std::setprecision(2)
-              << (m_stats.hitRate()  * 100.0) << "%\n"
-              << "  miss rate         : "
-              << (m_stats.missRate() * 100.0) << "%\n"
-              << "  evictions         : " << m_stats.evictions         << "\n"
-              << "  dirty write-backs : " << m_stats.writeBacks        << "\n"
-              << "  write-throughs    : " << m_stats.writeThroughs     << "\n";
+void Cache::printStats(std::ostream& out) const {
+    const std::string border(41, '=');
+    const std::string wp  = m_cfg.writePolicy    == WritePolicy::WriteBack
+                          ? "write-back" : "write-through";
+    const std::string wmp = m_cfg.writeMissPolicy == WriteMissPolicy::WriteAllocate
+                          ? "write-allocate" : "no-write-allocate";
+
+    out << border << "\n"
+        << " Cache Simulation Report: " << m_cfg.name << "\n"
+        << border << "\n\n";
+
+    out << " Configuration\n";
+    reportRow(out, "  Size",          fmtBytes(m_cfg.capacityBytes));
+    reportRow(out, "  Block Size",    std::to_string(m_cfg.blockBytes) + " B");
+    reportRow(out, "  Associativity", std::to_string(m_cfg.associativity) + "-way");
+    reportRow(out, "  Sets",          std::to_string(m_numSets));
+    reportRow(out, "  Replacement",   policyName(m_cfg.replacementPolicy));
+    reportRow(out, "  Write Policy",  wp);
+    reportRow(out, "  Write Miss",    wmp);
+    out << "\n";
+
+    out << " Simulation Results\n";
+    reportRow(out, "  Total Accesses", fmtInt(m_stats.totalAccesses()));
+    reportRow(out, "  Reads",          fmtInt(m_stats.reads));
+    reportRow(out, "  Writes",         fmtInt(m_stats.writes));
+    out << "\n";
+    reportRow(out, "  Hits",           fmtInt(m_stats.hits));
+    reportRow(out, "  Misses",         fmtInt(m_stats.misses));
+    out << "\n";
+    reportRow(out, "  Hit Rate",       fmtPct(m_stats.hitRate()));
+    reportRow(out, "  Miss Rate",      fmtPct(m_stats.missRate()));
+    out << "\n";
+    reportRow(out, "  Evictions",      fmtInt(m_stats.evictions));
+    reportRow(out, "  Write-backs",    fmtInt(m_stats.writeBacks));
+    reportRow(out, "  Write-throughs", fmtInt(m_stats.writeThroughs));
+    out << "\n" << border << "\n";
 }
+
+void Cache::printStats() const { printStats(std::cout); }
 
 //structural accessors
 int Cache::numSets()       const { return m_numSets; }

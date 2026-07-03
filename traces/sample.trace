@@ -1,0 +1,35 @@
+# sample.trace — hand-crafted trace for the default config (32 KiB / 64 B / 4-way LRU)
+#
+# Address layout (stride = 128 sets * 64 B = 8192 = 0x2000):
+#   Set 0 addresses: 0x0000, 0x2000, 0x4000, 0x6000, 0x8000, 0xA000, ...
+#   Bytes 0x8000–0x803F are all within the same 64-byte cache line.
+#
+# Expected results with default config:
+#   Total accesses: 13    Hits: 5    Misses: 8
+#   Evictions: 4          Write-backs: 1 (dirty line 0x0000)
+
+# Cold start: 4 misses filling all 4 ways of set 0
+R 0x00000000
+R 0x00002000
+R 0x00004000
+R 0x00006000
+
+# Temporal locality: re-read recently loaded addresses
+R 0x00000000
+R 0x00002000
+
+# Write hit: marks line 0x0000 dirty (write-back policy)
+W 0x00000000
+
+# Eviction: 5th unique address to set 0 evicts the LRU (0x4000, which is clean)
+R 0x00008000
+
+# Spatial locality: different byte offsets within the same 64-byte line as 0x8000
+R 0x00008010
+R 0x0000803C
+
+# Force dirty eviction: load 3 more lines into set 0
+# Each evicts the current LRU; the third evicts 0x0000 (dirty) → triggers write-back
+R 0x0000A000
+R 0x0000C000
+R 0x0000E000
