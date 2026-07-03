@@ -16,7 +16,8 @@ cache-simulator/
 │   ├── CacheLine.h          # One cache line
 │   ├── TraceReader.h        # Streaming trace file parser
 │   ├── Config.h             # Configuration structs and policy enums
-|   └── IReplacementPolicy.h # Methods cache calls during simulation
+|   ├── IReplacementPolicy.h # Methods cache calls during simulation
+|   └── ConfigParser.h       # Loads cache parameters from files
 ├── src/                     # Implementation files + main entry point
 ├── configs/                 # Example JSON/INI cache configuration files
 ├── traces/                  # Memory access trace files
@@ -41,3 +42,6 @@ I implemented the trace reader. A trace file is a record of every memory access 
 
 **Update 5:**
 Now that my cache and tracereader both work, I used claude to wire them together in main.cpp and add command line configuration. The entry point now accepts a trace file path as well as some optional files so that the same binary can simulate different cache geometries/policies without having to recompile. It prints the resolved configuration before running, processes every line of the trace file using cache.access(), and prints a full statistics report at the end covering the following: total accesses, reads, writes, hits, misses, hit rate, miss rate, evictions, dirty write backs, adn write throughs. The statistics struct was also extended with separate read and write counters and a missRate() method.
+
+**Update 6:**
+This update was to support loading cache parameters from a text configuration file. I added a ConfigParser class that does just that, so the user can swap between different cache configurations without having to recompile or type long commands. The format is simple key = value pairs, with one per line, and K/M size suffixes(ex. 32K). There are 7 keys that are supported: name, cache_size, block_size, associativity, replacement, write_policy, and write_miss. If there is an unknown key, a warning is produced but the program doesn't crash. I also added 3 example configs to make common cache architectures easy to produce.
