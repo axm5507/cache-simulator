@@ -1,17 +1,18 @@
 #include "Cache.h"
 #include "Config.h"
+#include "ConfigParser.h"
 #include "TraceReader.h"
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string>
-//all of this file was written by Claude, this is because it makes formatting/testing way easier
 
 static void printUsage(const char* prog) {
     std::cout <<
         "Usage: " << prog << " <trace-file> [options]\n"
         "\n"
         "Options:\n"
+        "  --config F        load settings from a key=value config file\n"
         "  --capacity N      total cache size in bytes        (default 32768)\n"
         "  --block-size N    bytes per cache line             (default 64)\n"
         "  --assoc N         ways per set                     (default 4)\n"
@@ -21,17 +22,29 @@ static void printUsage(const char* prog) {
         "  --name S          label shown in output            (default L1)\n"
         "  --help            show this message\n"
         "\n"
+        "Precedence: CLI flags override values loaded from --config.\n"
+        "\n"
         "Trace file format (one access per line):\n"
         "  R <hex-address>   read\n"
         "  W <hex-address>   write\n"
-        "  Lines beginning with '#' are treated as comments.\n";
+        "  Lines beginning with '#' are treated as comments.\n"
+        "\n"
+        "Config file format (key = value, one per line):\n"
+        "  cache_size    = 32K\n"
+        "  block_size    = 64\n"
+        "  associativity = 4\n"
+        "  replacement   = lru\n"
+        "  write_policy  = write_back\n"
+        "  write_miss    = write_allocate\n";
 }
 
-// Returns a fully-populated CacheConfig built from argv[2..argc-1].
-// Throws std::invalid_argument on unrecognised arguments.
-static CacheConfig parseArgs(int argc, char* argv[]) {
-    CacheConfig cfg;
+// Apply CLI flags (argv[2..]) to `cfg`. Skips --config / its argument since
+// the config file is handled in a separate pass before this is called.
+static void applyCliArgs(int argc, char* argv[], CacheConfig& cfg) {
     for (int i = 2; i < argc; ++i) {
+        // Skip --config and its path argument — already handled.
+        if (std::strcmp(argv[i], "--config") == 0) { ++i; continue; }
+
         auto need = [&]() -> std::string {
             if (i + 1 >= argc)
                 throw std::invalid_argument(std::string(argv[i]) + " requires a value");
@@ -45,17 +58,17 @@ static CacheConfig parseArgs(int argc, char* argv[]) {
         } else if (std::strcmp(argv[i], "--assoc") == 0) {
             cfg.associativity = std::stoi(need());
         } else if (std::strcmp(argv[i], "--policy") == 0) {
-            std::string v = need();
+            const std::string v = need();
             if      (v == "fifo")   cfg.replacementPolicy = ReplacementPolicy::FIFO;
             else if (v == "random") cfg.replacementPolicy = ReplacementPolicy::Random;
             else                    cfg.replacementPolicy = ReplacementPolicy::LRU;
         } else if (std::strcmp(argv[i], "--write-policy") == 0) {
-            std::string v = need();
+            const std::string v = need();
             cfg.writePolicy = (v == "writethrough")
                             ? WritePolicy::WriteThrough
                             : WritePolicy::WriteBack;
         } else if (std::strcmp(argv[i], "--write-alloc") == 0) {
-            std::string v = need();
+            const std::string v = need();
             cfg.writeMissPolicy = (v == "no-allocate")
                                 ? WriteMissPolicy::NoWriteAllocate
                                 : WriteMissPolicy::WriteAllocate;
@@ -68,7 +81,6 @@ static CacheConfig parseArgs(int argc, char* argv[]) {
             throw std::invalid_argument(std::string("unknown option: ") + argv[i]);
         }
     }
-    return cfg;
 }
 
 int main(int argc, char* argv[]) {
@@ -77,9 +89,24 @@ int main(int argc, char* argv[]) {
         return argc < 2 ? 1 : 0;
     }
 
+    // Phase 1 — load config file if --config is present.
+    // This happens before CLI flags so that subsequent flags can override it.
     CacheConfig cfg;
+    for (int i = 2; i < argc - 1; ++i) {
+        if (std::strcmp(argv[i], "--config") == 0) {
+            try {
+                cfg = ConfigParser::fromFile(argv[i + 1], cfg);
+            } catch (const std::exception& e) {
+                std::cerr << "Error: " << e.what() << "\n";
+                return 1;
+            }
+            break; // only the first --config is applied
+        }
+    }
+
+    // Phase 2 — apply CLI flags (overrides config file values).
     try {
-        cfg = parseArgs(argc, argv);
+        applyCliArgs(argc, argv, cfg);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         printUsage(argv[0]);
@@ -93,10 +120,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Construct and validate cache geometry.
+    // Construct and validate the cache (throws on bad geometry).
     Cache cache(cfg);
 
-    // Print the configuration that will be simulated.
+    // Print the resolved configuration.
     std::cout << "Cache configuration:\n"
               << "  name          : " << cfg.name                        << "\n"
               << "  capacity      : " << cfg.capacityBytes << " B\n"
@@ -115,11 +142,9 @@ int main(int argc, char* argv[]) {
                                                                         : "no-write-allocate") << "\n"
               << "\n";
 
-    // --- Main simulation loop ---
-    while (auto entry = reader.next()) {
-        bool isWrite = (entry->op == 'W');
-        cache.access(entry->address, isWrite);
-    }
+    // Main simulation loop.
+    while (auto entry = reader.next())
+        cache.access(entry->address, entry->op == 'W');
 
     std::cout << "Simulation complete (" << reader.lineNumber() << " lines read).\n\n";
     cache.printStats();

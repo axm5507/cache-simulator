@@ -12,6 +12,7 @@ add_library(cache_sim_lib
     src/Cache.cpp
     src/IReplacementPolicy.cpp
     src/TraceReader.cpp
+    src/ConfigParser.cpp
 )
 
 target_include_directories(cache_sim_lib PUBLIC include)
