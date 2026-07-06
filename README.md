@@ -173,7 +173,7 @@ The first is regarding cache size and hit rate on sequential trace:
 | 64 KiB | 50% | 0 | 0 |
 | 128 KiB | 50% | 0 | 0 |
 
-This was for a sequential trace with 2 passes of 512 lines. At 8 and 16 KiB, the cache couldn't hold all 512 lines, so by the time pass 2 started re reading addresses, they had already been evicted. Because of this, pass 2 is all misses, giving a 0% hit rate. At 32 KiB, the cache is able to hold the entire set. Pass 1 is all misses, but pass 2 is 512 hits, or 50%. Adding more cache after that does nothing, because the working set is able to be stored with 32 KiB. The conclusion I got from this is that cache size only matters up until the size of the working set, and anything after that never gets used.
+This was for a sequential trace with 2 passes of 512 lines. At 8 and 16 KiB, the cache couldn't hold all 512 lines, so by the time pass 2 started re-reading addresses, they had already been evicted. Due to this, pass 2 is all misses, or a 0% hit rate. At 32 KiB, the cache is able to hold the entire set. Pass 1 is all misses, but pass 2 is 512 hits, or 50%. Adding more cache after that does nothing, because the working set is able to be stored with 32 KiB. The takeaway was that cache size only matters up until the size of the working set, and anything after that never gets used.
 
 ---
 
@@ -187,7 +187,7 @@ The next is regarding cache size and hit rate on random trace (1 MiB address win
 | 64 KiB | 3.42% | 96.58% | 191 | 47 |
 | 128 KiB | 3.81% | 96.19% | 29 | 5 |
 
-Even cache size of 128 KiB only gets a 3.81% hit rate. Although the cache is large, the pattern is working against it. There are 1024 accesses spread across a 1 MiB window, which means most addresses are never revisited. While adding more cache size increases the hit rate slightly, the access pattern keeps the hit rate low. The takeaway here was that temporal locality(reusing same address) matters more than cache size.
+Even a cache size of 128 KiB only gets a 3.81% hit rate. Although the cache is large, the pattern is working against it. There are 1024 accesses spread across a 1 MiB window, which means most addresses are never revisited. While adding more cache size increases the hit rate slightly, the access pattern keeps the hit rate low. The takeaway here was that temporal locality(reusing same address) matters more than cache size.
 
 ---
 
