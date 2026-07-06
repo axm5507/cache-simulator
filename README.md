@@ -4,7 +4,9 @@ This project is a CPU cache simulator written in C++17.
 
 ## Overview
 
-This simulator models how a CPU cache behaves when replaying memory access traces. It will support configurable cache geometry, replacement policies, and write policies.
+This simulator models how a CPU cache behaves when replaying memory access traces. It models set-associative caches with a configurable size, block size, associativity, replacement policy, and write policy. It supports single level and two level L1 + L2 hierarchies. All behavior is validated by unit testing and the results are recorded below. 
+
+This project showed me how heavily dependent cache performance is on access patterns. Sure, a larger cache, higher associativity, and better replacement policy all help, but having them cannot fix a working set that doesn't fit, or data that is never reused, or a stride that skips past each cache line. For example, in my test results, doubling the block size on row-major traversal halved the miss rate every time, while doing the same on column-major traversal had no effect at all and actually made evictions worse. Furthermore, when testing different replacement policies on a column-major matrix trace, the more "smart" policy(LRU) was outperformed by random eviction because the cyclic access pattern turned LRU's recency tracking into a liability instead of an advantage. Overall, I learned that understanding the data's access pattern is necessary before doing things like tuning cache parameters, and that a well-matched configuration can be the difference between a 98% hit rate and a 0% hit rate on the exact same hardware.  
 
 ## Project Structure
 
@@ -25,7 +27,6 @@ cache-simulator/
 ├── results/                 # Simulation output files
 └── tests/                   # Unit and integration tests
 ```
-
 
 ## How to Run:
 
@@ -158,6 +159,126 @@ OR, run the test binary directly to get more verbose output.
 
 This covers address decomposition, hit/miss detection, dirty bit behavior, LRU/FIFO eviction ordering, random replacement validity, fully associative and direct mapped configs, writeback/writethrough/writeallocate/nowriteallocate policies, trace parsing edge cases, and config file loading.
 
+## Results:
+
+After thorough testing, I found the following patterns that model several fundamental principles of cache design.
+
+The first is regarding cache size and hit rate on sequential trace:
+
+| Size | Hit Rate | Evictions | Write-backs |
+| --- | --- | --- | --- |
+| 8 KiB | 0% | 896 | 178 |
+| 16 KiB | 0% | 768 | 153 |
+| 32 KiB | 50% | 0 | 0 |
+| 64 KiB | 50% | 0 | 0 |
+| 128 KiB | 50% | 0 | 0 |
+
+This was for a sequential trace with 2 passes of 512 lines. At 8 and 16 KiB, the cache couldn't hold all 512 lines, so by the time pass 2 started re reading addresses, they had already been evicted. Because of this, pass 2 is all misses, giving a 0% hit rate. At 32 KiB, the cache is able to hold the entire set. Pass 1 is all misses, but pass 2 is 512 hits, or 50%. Adding more cache after that does nothing, because the working set is able to be stored with 32 KiB. The conclusion I got from this is that cache size only matters up until the size of the working set, and anything after that never gets used.
+
+---
+
+The next is regarding cache size and hit rate on random trace (1 MiB address window, 4way, LRU):
+
+| Size | Hit Rate | Miss Rate | Evictions | Write-backs |
+| --- | --- | --- | --- | --- |
+| 8 KiB | 0.49% | 99.51% | 891 | 225 |
+| 16 KiB | 1.46% | 98.54% | 753 | 189 |
+| 32 KiB | 2.44% | 97.56% | 499 | 125 |
+| 64 KiB | 3.42% | 96.58% | 191 | 47 |
+| 128 KiB | 3.81% | 96.19% | 29 | 5 |
+
+Even cache size of 128 KiB only gets a 3.81% hit rate. Although the cache is large, the pattern is working against it. There are 1024 accesses spread across a 1 MiB window, which means most addresses are never revisited. While adding more cache size increases the hit rate slightly, the access pattern keeps the hit rate low. The takeaway here was that temporal locality(reusing same address) matters more than cache size.
+
+---
+
+Then, I moved on to associativity vs hit rate, testing column-major matrix trace first (32 KiB, 64 B blocks, LRU):
+
+| Associativity | Hit Rate | Miss Rate | Evictions | Write-backs |
+| --- | --- | --- | --- | --- |
+| 1-way | 0% | 100% | 15,872 | 0 |
+| 2-way | 0% | 100% | 15,872 | 0 |
+| 4-way | 0% | 100% | 15,872 | 0 |
+| 8-way | 0% | 100% | 15,872 | 0 |
+| 16-way | 0% | 100% | 15,872 | 0 |
+
+No matter what the associativity was, the miss rate was 100%. Column-major acecss has a 512 byte stride between consecutive accesses, which is 8 cache lines apart. Every access loads a brand new cache line that is never reused regardless of the number of ways each set will have. The takeaway was that no replacement policy or associativity level can help when reuse does not exist.
+
+---
+
+Next, I looked at block size vs hit rate with a row-major matrix trace (32 KiB, 4way, LRU):
+
+| Block Size | Hit Rate | Miss Rate | Evictions |
+| --- | --- | --- | --- |
+| 16 B | 75.00% | 25.00% | 2,048 |
+| 32 B | 87.50% | 12.50% | 1,024 |
+| 64 B | 93.75% | 6.25% | 512 |
+| 128 B | 96.88% | 3.12% | 256 |
+| 256 B | 98.44% | 1.56% | 128 |
+
+With every 2x increase in block size, the miss rate was halved. Each time a new cache line is fetched, it brings in multiple consecutive integers. Since an integer is 4 bytes, a 16 byte block gets 1 miss followed by 3 hits, or a 75% hit rate. A 32 byte block gets 1 miss followed by 7 hits, or an 87.5% hit rate. This pattern is continued with every increase in block size. Evictions also halve because there are half as many unique lines to load + discard. The takeaway was that larger blocks are good when accesses are sequential.
+
+---
+
+Next, I looked at block size vs hit rate with a column-major matrix trace (32 KiB, 4-way, LRU):
+
+| Block Size | Hit Rate | Miss Rate | Evictions |
+| --- | --- | --- | --- |
+| 16 B | 0% | 100% | 14,336 |
+| 32 B | 0% | 100% | 15,360 |
+| 64 B | 0% | 100% | 15,872 |
+| 128 B | 0% | 100% | 16,128 |
+| 256 B | 0% | 100% | 16,256 |
+
+Like I mentioned with the last examples, Larger blocks only matter when accesses are sequential. Fetching cache lines doesn't help with a column-major matrix trace. In fact, evictions actually increased with the larger blocks. Bigger blocks -> 32 KiB holds fewer lines -> the cache fills up faster and evicts more. A 16 byte block holds 2048 lines while a 256 byte block only holds 128, and with a column-major stride, you are going to land on a new line regardless of block size. The takeaway was that larger blocks actually harm you when accesses stride past the block boundary each time.
+
+---
+
+Then I moved on to replacement policy vs hit rate with random trace (32 KiB, 4-way, 64 B blocks):
+
+| Policy | Hit Rate | Miss Rate | Evictions | Write-backs |
+| --- | --- | --- | --- | --- |
+| LRU | 2.44% | 97.56% | 499 | 125 |
+| FIFO | 2.44% | 97.56% | 499 | 126 |
+| Random | 2.44% | 97.56% | 499 | 130 |
+
+The stats here are pretty much identical. When the access pattern is random, each policy performs basically the same. The takeaway was that when the next address is unpredictable, the choice of victim does not matter.
+
+---
+
+Then I tested replacement policy vs hit rate for sequential trace (32 KiB, 4-way, 64 B blocks):
+
+| Policy | Hit Rate | Miss Rate | Evictions | Write-backs |
+| --- | --- | --- | --- | --- |
+| LRU | 50% | 50% | 0 | 0 |
+| FIFO | 50% | 50% | 0 | 0 |
+| Random | 50% | 50% | 0 | 0 |
+
+Replacement policies only make decisions when the cache is full and a new block needs to replace an existing one, but that never happens here. The cache fills once during the first pass and does not need to evict anything during the second pass. The takeaway was if there are no evictions, all policies will produce identical results.
+
+---
+
+Next, replacement policy vs hit rate for column-major matrix trace (32 KiB, 4-way, 64 B blocks):
+
+| Policy | Hit Rate | Miss Rate | Evictions | Write-backs |
+| --- | --- | --- | --- | --- |
+| LRU | 0% | 100% | 15,872 | 0 |
+| FIFO | 0% | 100% | 15,872 | 0 |
+| Random | 16.66% | 83.34% | 13,142 | 0 |
+
+Surprisingly, random replacement policy beat LRU and FIFO significantly. Column-major traversal visits sets in a deterministic repeating cycle, and with 128 rows and 128 sets each set sees the same sequence of row tags cycling through every 16 rows. With 4 way LRU, the 5th unique tag always evicts the line that will be needed soonest. The oldest in the cycle is always the one you will need again. LRU and FIFO are both wrong every time. Random eviction, by nature of being random, occasionally keeps the right line, breaking this worst case cycle. The takeaway was some real processors use random replacement instead of strict LRU for this reason.
+
+---
+
+FInally, I looked at write policy vs hit rate for sequential trace (32 KiB, 4-way, 64 B blocks, LRU):
+
+| Policy | Hit Rate | Miss Rate | Evictions | Write-backs |
+| --- | --- | --- | --- | --- |
+| write-back + allocate | 50% | 50% | 0 | 0 |
+| write-back + no-allocate | 40.04% | 59.96% | 0 | 0 |
+| write-through + allocate | 50% | 50% | 0 | 0 |
+| write-through + no-allocate | 40.04% | 59.96% | 0 | 0 |
+
+There was about a 10% hit rate drop when you use no-allocate. This comes from the 20% of accesses that are writes. In pass 1, write misses do not load their line into cache under no-allocate. Because of this, when pass 2 reads those same addresses, they're cold misses that would have been hits under allocate. Write policy doesn't have an effect on hit rate, it only changes how many times main memory is written to. The takeaway was that allocate is the right choice when writes are followed by reads to the same region, and no-allocate is the right choice when you write data once and don't read it back.
 
 ## Progress Updates
 
