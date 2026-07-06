@@ -26,6 +26,89 @@ cache-simulator/
 └── tests/                   # Unit and integration tests
 ```
 
+## How to Run:
+
+**Prerequisites:**
+ `Cmake`
+
+**Building:**
+
+`cmake -S . -B build`
+`cmake --build build`
+
+(On Windows the executables land in `build\Debug\` by default, to build an optimized release, use this:)
+
+`cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
+`cmake --build build --config Release`
+
+**Running a Simulation**
+
+`cache_sim <trace-file> [options]`
+
+The simulator reads a trace file line by line and replays each memory access against the configured cache. When it's done, it prints a full report.
+
+To run default config(32 KiB, 64B blocks, 4 way LRU write back)
+`cache_sum traces/sample.trace`
+
+To load a config file:
+`cache_sim traces/sample.trace --config configs/default.conf`
+
+For two level L1 + L2 simulation:
+`cache_sim traces/sample.trace --config configs/default/conf --l2-config configs/l2_cache.conf`
+
+**All Options**:
+Load L1 settings from a config file:
+`--config F`
+Load L2 settings and enable a two level sim:
+`--l2-config F`
+Cache size in bytes:
+`--capacity N`
+Bytes per cache line:
+`--block-size N`
+Ways per set:
+`--assoc N`
+Policy(lru, fifo, random):
+`--policy P`
+Write policy(writeback, writethrough):
+`--write-policy P`
+Write allocation(allocate, no-allocate):
+`--write-alloc P`
+Label shown in report:
+`--name S`
+
+**Config File Format**
+`#Any comments begin with a '#'`
+`name = L1`
+`cache_size = 32K    # K and M suffixes are supported`
+`block_size = 64`
+`associativity = 4`
+`replacement = lru`
+`write_policy = write_back`
+`write_miss = write_allocate`
+
+There are 4 ready made configs in `configs/`. 
+
+**Generating Benchmark Traces:**
+`gen_traces traces/`
+This creates 4 trace files in the given directory. They are:
+`sequential.trace` - Two passes over 512 lines where stride = block size, cold start misses on pass 1 and all hits on pass 2.
+`random.trace` - 1024 pseudo random accesses in 1 MiB i=window, shows the effect of poor temporal locality
+`matrix_row_major.trace` - 128x128 int matrix, row major, shows low miss rate with 16 ints sharing one cache line
+`matrix_col_major.trace` - 128x128 int matrix, column major, shows near 100% miss rate with stride = 512 B(one new line per access)
+
+**Running Tests:**
+`cd build`
+`ctest --output-on-failure`
+
+OR, run the test binary directly to get more verbose output.
+
+`.\build\Debug\cache_sim_tests.exe  #Windows`
+`./build/cache_sim_tests    #Linux/mac`
+
+This covers address decomposition, hit/miss detection, dirty bit behavior, LRU/FIFO eviction ordering, random replacement validity, fully associative and direct mapped configs, writeback/writethrough/writeallocate/nowriteallocate policies, trace parsing edge cases, and config file loading.
+
+
+
 ## Progress Updates
 
 **Update 1:** 
