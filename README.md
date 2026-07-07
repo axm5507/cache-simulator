@@ -1,6 +1,6 @@
 # Cache Simulator
 
-This project is a CPU cache simulator written in C++17.
+This project is a CPU cache simulator written in C++.
 
 ## Overview
 
